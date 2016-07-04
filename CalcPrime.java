@@ -22,6 +22,12 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class CalcPrime {
 
+  public static final String SPLITS_NUM = "calcprime.splits.num";
+  public static final String MAX_RANGE = "calcprime.range.max";
+
+  public static final long DEFAULT_SLITS = 200;
+  public static final long DEFAULT_MAX = 10000;
+
   public static class NumberInputFormat
       extends InputFormat<LongWritable, NullWritable> {
 
@@ -101,11 +107,22 @@ public class CalcPrime {
 
       public List<InputSplit> getSplits(JobContext job) {
         List<InputSplit> splits = new ArrayList<InputSplit>();
-        for (int start = 0; start < 100; ++start) {
-          splits.add(new NumberInputSplit(start * 10000, 10000));
+        long splitsNum = getSplitsNum(job);
+        long maxRange = getMaxRange(job);
+        for (int start = 0; start < splitsNum; ++start) {
+          splits.add(new NumberInputSplit(start * maxRange, maxRange));
         }
         return splits;
       }
+
+      public long getSplitsNum(JobContext job) {
+        return job.getConfiguration().getLong(SPLITS_NUM, DEFAULT_SLITS);
+      }
+
+      public long getMaxRange(JobContext job) {
+        return job.getConfiguration().getLong(MAX_RANGE, DEFAULT_MAX);
+      }
+
   }
 
   public static class NumberMapper
@@ -135,7 +152,17 @@ public class CalcPrime {
 
   public static void main(String[] args) throws Exception {
     Configuration conf = new Configuration();
-    Job job = Job.getInstance(conf, "Calc Primer");
+    Job job = Job.getInstance(conf, "Calc Prime");
+    long splitsNum = DEFAULT_SLITS;
+    long maxRange = DEFAULT_MAX;
+    if (args.length > 1) {
+      splitsNum = Long.parseLong(args[1]);
+    }
+    if (args.length > 2) {
+      maxRange = Long.parseLong(args[2]);
+    }
+    job.getConfiguration().setLong(SPLITS_NUM, splitsNum);
+    job.getConfiguration().setLong(MAX_RANGE, maxRange);
     FileOutputFormat.setOutputPath(job, new Path(args[0]));
     job.setJarByClass(CalcPrime.class);
     job.setMapperClass(NumberMapper.class);
