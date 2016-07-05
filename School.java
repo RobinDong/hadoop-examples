@@ -6,18 +6,22 @@ import java.util.List;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.WritableComparator;
+import org.apache.hadoop.io.RawComparator;
 import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 public class School {
 
@@ -83,6 +87,65 @@ public class School {
     }
   }
 
+  public static class ScoreComparator extends WritableComparator {
+    protected ScoreComparator() {
+      super(Text.class, true);
+    }
+
+    @Override
+    public int compare(WritableComparable w1, WritableComparable w2) {
+      Text t1 = (Text) w1;
+      Text t2 = (Text) w2;
+      String[] arr1 = t1.toString().split("\t");
+      String[] arr2 = t2.toString().split("\t");
+
+      String name1 = arr1[0];
+      String[] item1 = arr1[1].split(",");
+      String course1 = item1[0];
+      String score1 = item1[1];
+
+      String name2 = arr2[0];
+      String[] item2 = arr2[1].split(",");
+      String course2 = item2[0];
+      String score2 = item2[1];
+
+      int comp = name1.compareTo(name2);
+
+      if (comp == 0) {
+        comp = score2.compareTo(score1);
+      }
+
+      return comp;
+    }
+  }
+
+  public static class ScorePartitioner extends Partitioner<Text, NullWritable> {
+    @Override
+    public int getPartition(Text key, NullWritable value, int numPartitions) {
+      return key.hashCode() % numPartitions;
+    }
+  }
+
+  public static class SortMapper
+    extends Mapper<LongWritable, Text, Text, NullWritable> {
+
+    @Override
+    public void map(LongWritable key, Text value, Context context)
+      throws IOException, InterruptedException {
+      context.write(value, NullWritable.get());
+    }
+  }
+
+  public static class SortReducer
+    extends Reducer<Text, NullWritable, Text, NullWritable> {
+
+    @Override
+    public void reduce(Text key, Iterable<NullWritable> values, Context context)
+      throws IOException, InterruptedException {
+      context.write(key, NullWritable.get());
+    }
+  }
+
   public static void main(String[] args) throws Exception {
     Configuration conf = new Configuration();
     Job job = Job.getInstance(conf, "School");
@@ -93,6 +156,19 @@ public class School {
     MultipleInputs.addInputPath(job, new Path(args[1]), TextInputFormat.class, ScoreMapper.class);
     job.setReducerClass(InnerJoinReducer.class);
     FileOutputFormat.setOutputPath(job, new Path(args[2]));
-    System.exit(job.waitForCompletion(true) ? 0 : 1);
+    job.waitForCompletion(true);
+
+    /* Sorting */
+    Job sortJob = Job.getInstance(conf, "School Sort By Score");
+    sortJob.setJarByClass(School.class);
+    sortJob.setSortComparatorClass(ScoreComparator.class);
+    sortJob.setMapperClass(SortMapper.class);
+    sortJob.setPartitionerClass(ScorePartitioner.class);
+    sortJob.setReducerClass(SortReducer.class);
+    sortJob.setOutputKeyClass(Text.class);
+    sortJob.setOutputValueClass(NullWritable.class);
+    TextInputFormat.addInputPath(sortJob, new Path(args[2]));
+    TextOutputFormat.setOutputPath(sortJob, new Path(args[3]));
+    System.exit(sortJob.waitForCompletion(true) ? 0 : 1);
   }
 }
